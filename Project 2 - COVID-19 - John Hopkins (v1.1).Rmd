@@ -1,0 +1,168 @@
+---
+title: "John Hopkins COVID-19"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r libraries}
+library(tidyverse)
+library(lubridate)
+```
+
+## Importing and Tidying COVID-19 Data
+
+We will pull in and tidy the global data provided by the John Hopkins Whiting School of Engineering.
+
+```{r COVID_data}
+# Load our data from the source, https://github.com/CSSEGISandData/COVID-19/
+base_url <- "https://raw.githubusercontent.com/CSSEGISandData/COVID-19/master/csse_covid_19_data/csse_covid_19_time_series/"
+filenames <- c("time_series_covid19_confirmed_US.csv",
+                "time_series_covid19_confirmed_global.csv",
+                "time_series_covid19_deaths_US.csv",
+                "time_series_covid19_deaths_global.csv",
+                "time_series_covid19_recovered_global.csv")
+urls <- str_c(base_url, filenames)
+# usa_cases <- read_csv(urls[0])
+# usa_deaths <- read_csv(urls[1])
+global_cases <- read_csv(urls[2])
+global_deaths <- read_csv(urls[4])
+global_recovered <- read_csv(urls[5])
+```
+
+```{r tidy_data, include=FALSE}
+global_cases_clean <- global_cases %>%
+    pivot_longer(cols = -c(`Province/State`, `Country/Region`, Lat, Long),
+                 names_to = "Date",
+                 values_to = "Cases") %>%
+    select(-c(Lat, Long)) %>%
+    mutate(Date = mdy(Date))
+sample_n(global_cases_clean, 5)
+
+# `Province_State`, `Country_Region`, Lat, Long_, UID, code3, FIPS, iso2, iso3, Admin2, Combined_Key
+global_deaths_clean <- global_deaths %>%
+    pivot_longer(cols = -c(`Province/State`, `Country/Region`, Lat, Long),
+                 names_to = "Date",
+                 values_to = "Deaths") %>%
+    select(-c(Lat, Long)) %>%
+    mutate(Date = mdy(Date))
+sample_n(global_deaths_clean, 5)
+
+global_recovered_clean <- global_recovered %>%
+    pivot_longer(cols = -c(`Province/State`, `Country/Region`, Lat, Long),
+                 names_to = "Date",
+                 values_to = "Recovered") %>%
+    select(-c(Lat, Long)) %>%
+    mutate(Date = mdy(Date))
+
+sample_n(global_recovered_clean, 5)
+```
+
+
+## Visualizing Global COVID-19 Data
+
+
+
+```{r total_data, echo = FALSE}
+
+global_cases_daily <- global_cases_clean %>%
+          group_by(Date) %>% 
+          summarize(Cases = sum(Cases))
+
+global_deaths_daily <- global_deaths_clean %>%
+          group_by(Date) %>% 
+          summarize(Deaths = sum(Deaths))
+
+global_recovered_daily <- global_recovered_clean %>%
+          group_by(Date) %>% 
+          summarize(Recovered = sum(Recovered))
+
+#sample_n(global_recovered_weekly, 5)
+
+global_totals_by_country <- global_cases_clean %>%
+                  full_join(global_deaths_clean) %>%
+                  full_join(global_recovered_clean)
+
+sample_n(global_totals_by_country, 5)
+
+global_totals <- global_cases_daily %>%
+                  full_join(global_deaths_daily) %>%
+                  full_join(global_recovered_daily)
+
+sample_n(global_totals, 5)
+
+```
+
+```{r graphing_global, echo = FALSE}
+
+global_totals %>%
+    filter(Cases > 0) %>%
+    filter(Recovered > 0) %>%
+    ggplot(aes(x = Date, y = Cases)) +
+    geom_line(aes(y = Cases, color = "Cases")) +
+    scale_y_log10() +
+    geom_line(aes(y = Deaths, color = "Deaths")) +
+    geom_line(aes(y = Recovered, color = "Recovered")) +
+    theme(legend.title=element_blank(), legend.position="right", axis.text.x = element_text(angle = 45)) +
+    labs(title = "COVID-19 Global Cases", y = NULL)
+
+```
+```{r population_data, echo = FALSE}
+
+# Break down by the 10 most populous countries (https://www.census.gov/popclock/world)
+top_countries <- c("China", "India", "US", "Indonesia", "Pakistan", "Brazil", "Nigeria", "Bangladesh", "Russia", "Mexico")
+most_populous <- data.frame("Country_Region" = top_countries, "Population" = c(1397897720, 1339330514, 332475723, 275122131, 238181034, 219463862, 213445417, 164098818, 142320790, 130207371))
+
+by_most_populous <- global_totals_by_country %>%
+                    rename("Country_Region" = `Country/Region`) %>%
+                    left_join(most_populous, by = "Country_Region") %>%
+                    mutate(cases_per_thou = 1000* Cases / Population,
+                           deaths_per_thou = 1000* Deaths / Population,
+                           recov_per_thou = 1000* Recovered / Population)
+                  
+```
+
+
+```{r graphing_countries, echo = FALSE}
+
+by_most_populous %>%
+    filter(cases_per_thou > 0.01) %>%
+    ggplot(aes(x = Date, y = cases_per_thou)) +
+    geom_line(aes(y = cases_per_thou, color = Country_Region)) + 
+    scale_y_log10() +
+    theme(legend.position="right", axis.text.x = element_text(angle = 90)) +
+    labs(title = "COVID-19 Cases Per Thousand, by Country (10 Most Populous)", y = NULL) + 
+    guides(color=guide_legend(title="Country/Region"))
+
+```
+
+## Modeling Recoveries per Cases, Over Time
+
+Modeling over time recoveries per confirmed cases should represent improvements in recovering the infected. 
+
+```{r modeling_recoveries, echo = FALSE}
+
+recovery_model <- lm(Recovered ~ Deaths, data = global_totals)
+
+# summary(recovery_model)
+global_totals_with_pred <- global_totals %>% mutate(Prediction = predict(recovery_model))
+
+global_totals_with_pred %>%
+    filter(Cases > 0) %>%
+    filter(Recovered > 0) %>%
+    ggplot(aes(x = Date, y = Cases)) +
+    geom_point(aes(y = Cases, color = "Cases")) +
+    geom_point(aes(y = Recovered, color = "Recovered")) +
+    geom_line(aes(y = Prediction, color = "Recovery Model")) +
+    theme(legend.title=element_blank(), legend.position="right", axis.text.x = element_text(angle = 45)) +
+    labs(title = "COVID-19 Global Cases \n(with Recovery Modeling)", y = NULL)
+
+```
+
+## Conclusion
+
+Exploring the John Hopkins COVID-19 case data is of course alarming, cases and deaths seem to increase exponentially. However, seeing cases per thousand on a per country basis level out is encouraging. Additionally, modeling the global ratio of recoveries versus cases shows increasing improvements in medical treatment.
+
+
