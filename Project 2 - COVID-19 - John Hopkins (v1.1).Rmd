@@ -161,6 +161,13 @@ global_totals_with_pred %>%
 
 ```
 
+## Possible Bias
+
+Population values were provided by the U.S. Census Bureau, a United States government data entity and population estimates may be skewed.
+
+The John Hopkins CSSE COVID-19 data is aggregated from many data sources (https://github.com/CSSEGISandData/COVID-19), which might be misinterpreted as making it less bias. Each individual source could be potentially biased, particularly given that it is usually a government entity from these various countries reporting their own numbers. One example that has raised suspicion before are the case numbers China has reported - refer to the "Cases by Country" graph and note that China's infection rate was similar to other countries at first but quickly leveled out, a pattern not repeated any where else.
+
+
 ## Conclusion
 
 Exploring the John Hopkins COVID-19 case data is of course alarming, cases and deaths seem to increase exponentially. However, seeing cases per thousand on a per country basis level out is encouraging. Additionally, modeling the global ratio of recoveries versus cases shows increasing improvements in medical treatment.
